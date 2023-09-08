@@ -96,10 +96,15 @@ MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);
 #define PROG_DOWN 6
 #define LFO_TOG 7
 #define ENC_BTN 0
+#define BUTTON_DOWN 0
+#define BUTTON_UP 1
 Encoder encoder(18, 19);
 long encoderPos = 0;
 bool isEncoderInverted = false;
-uint16_t encoderHoldCount = 0;
+// uint16_t encoderHoldCount = 0;
+uint32_t encoderButtonTime = 0;
+uint8_t encoderButtonState = 0;
+bool encoderButtonLongPressed = false;
 uint32_t encoderInvertEEPROMLocation = sizeof(FavoriteVoice)*7+1;
 
 //LCD
@@ -244,7 +249,9 @@ void setup()
     SDReadFailure();
   }
   removeMeta();
-  attachInterrupt(digitalPinToInterrupt(ENC_BTN), HandleRotaryButton, RISING);
+  attachInterrupt(digitalPinToInterrupt(ENC_BTN), HandleRotaryButton, CHANGE);
+  // attachInterrupt(digitalPinToInterrupt(ENC_BTN), HandleRotaryButtonUp, RISING);
+
   LoadFile(FIRST_FILE);
   ReadVoiceData();
   if(EEPROM.read(encoderInvertEEPROMLocation) == 0xFF) //eeprom not initialized
@@ -499,11 +506,24 @@ void removeMeta() //Remove useless meta files
 
 void HandleRotaryButton()
 {
-  if(encoderHoldCount >= 1000)
-    return;
-  lcdSelectionIndex++;
-  lcdSelectionIndex %= 3;
-  redrawLCDOnNextLoop = true;
+  encoderButtonState = digitalReadFast(ENC_BTN);
+  if (encoderButtonState == BUTTON_UP)
+  {
+    // Button up
+    if(encoderButtonLongPressed)
+      encoderButtonLongPressed = false;
+    else
+    {
+      lcdSelectionIndex++;
+      lcdSelectionIndex %= 3;
+      redrawLCDOnNextLoop = true;
+    }
+  }
+  else
+  {
+      // Button down
+      encoderButtonTime = millis();
+  }
 }
 
 void LCDRedraw(uint8_t graphicCursorPos)
@@ -1360,6 +1380,16 @@ void loop()
   while (usbMIDI.read()) {};
   MIDI.read();
   HandleRotaryEncoder();
+  if((encoderButtonState == BUTTON_DOWN) && (millis() - encoderButtonTime > 1000))
+  {
+    encoderButtonState = BUTTON_UP;
+    encoderButtonLongPressed = true;
+    isEncoderInverted ^= true; //toggle
+    isEncoderInverted == true ? Serial.println("Inverted Encoder...") : Serial.println("Normalized Encoder...");
+    EEPROM.put(encoderInvertEEPROMLocation, isEncoderInverted);
+    redrawLCDOnNextLoop = true;
+  }
+
   if(redrawLCDOnNextLoop)
   {
     redrawLCDOnNextLoop = false;
@@ -1377,20 +1407,20 @@ void loop()
     SendPatchSysex(sendPatchToVST);
     sendPatchToVST = 0xFF;
   }
-  while(!digitalReadFast(ENC_BTN) && encoderHoldCount < 1000)
-  {
-    delay(1);
-    encoderHoldCount++;
-    if(encoderHoldCount == 1000)
-    {
-      isEncoderInverted ^= true; //toggle
-      isEncoderInverted == true ? Serial.println("Inverted Encoder...") : Serial.println("Normalized Encoder...");
-      EEPROM.put(encoderInvertEEPROMLocation, isEncoderInverted);
-      LCDRedraw(lcdSelectionIndex);
-      break;
-    }
-  }
-  if(digitalReadFast(ENC_BTN))
-    encoderHoldCount = 0;
+  // while(!digitalReadFast(ENC_BTN) && encoderHoldCount < 1000)
+  // {
+  //   delay(1);
+  //   encoderHoldCount++;
+  //   if(encoderHoldCount == 1000)
+  //   {
+  //     isEncoderInverted ^= true; //toggle
+  //     isEncoderInverted == true ? Serial.println("Inverted Encoder...") : Serial.println("Normalized Encoder...");
+  //     EEPROM.put(encoderInvertEEPROMLocation, isEncoderInverted);
+  //     LCDRedraw(lcdSelectionIndex);
+  //     break;
+  //   }
+  // }
+  // if(digitalReadFast(ENC_BTN))
+  //   encoderHoldCount = 0;
 }
  
