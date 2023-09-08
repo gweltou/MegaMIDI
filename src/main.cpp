@@ -535,6 +535,7 @@ void HandleRotaryButton()
 
 void LCDRedraw(uint8_t graphicCursorPos)
 {
+  uint8_t arrow = isEncoderInverted ? (uint8_t)3 : (uint8_t)0;
   lcd.clear();
   lcd.home();
   lcdSelectionIndex = graphicCursorPos;
@@ -545,7 +546,7 @@ void LCDRedraw(uint8_t graphicCursorPos)
     lcd.setCursor(0, lcdSelectionIndex);
     lcd.print(" ");
     lcd.setCursor(0, lcdSelectionIndex);
-    isEncoderInverted == true ? lcd.write((uint8_t)3) : lcd.write((uint8_t)0);
+    lcd.write(arrow);
   }
 
   lcd.setCursor(1, 0);
@@ -577,7 +578,7 @@ void LCDRedraw(uint8_t graphicCursorPos)
     lcd.setCursor(14, 1);
     lcd.print(" ");
     lcd.setCursor(14, 1);
-    isEncoderInverted == true ? lcd.write((uint8_t)3) : lcd.write((uint8_t)0); //Arrow Right
+    lcd.write(arrow);
   }
 
   if(currentFavorite != 0xFF && currentFavorite < 8)
@@ -598,7 +599,7 @@ void LCDRedraw(uint8_t graphicCursorPos)
       lcd.setCursor(0, 2);
       for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
       {
-        lcdSelectionIndex == i + MENU_CH1 ? lcd.write((uint8_t)0) : lcd.print(" ");
+        lcdSelectionIndex == i + MENU_CH1 ? lcd.write(arrow) : lcd.print(" ");
         lcd.print("C"); lcd.print(i);
       }
       lcd.setCursor(1, 3);
