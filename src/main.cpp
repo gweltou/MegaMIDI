@@ -589,9 +589,7 @@ void LCDRedraw(uint8_t graphicCursorPos)
       {
         uint8_t voiceNum = ym2612.channels[i].voiceNumber;
         lcd.print(voiceNum);
-        int spaces = voiceNum < 10 ? 2 : 1;
-        for(int i=0; i<spaces; i++)
-          lcd.print(" ");
+        voiceNum < 10 ? lcd.print("  ") : lcd.print(" ");          
       }
     }
   }
