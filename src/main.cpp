@@ -101,7 +101,6 @@ MIDI_CREATE_INSTANCE(HardwareSerial, Serial1, MIDI);
 Encoder encoder(18, 19);
 long encoderPos = 0;
 bool isEncoderInverted = false;
-// uint16_t encoderHoldCount = 0;
 uint32_t encoderButtonTime = 0;
 uint8_t encoderButtonState = 0;
 bool encoderButtonLongPressed = false;
@@ -110,11 +109,17 @@ uint32_t encoderInvertEEPROMLocation = sizeof(FavoriteVoice)*7+1;
 //LCD
 #define LCD_ROWS 4
 #define LCD_COLS 20
+#define MENU_FILE 0
+#define MENU_VOICE 1
+#define MENU_OCTAVE 2
+#define MENU_CH1 3
 uint16_t fileNameScrollIndex = 0;
 uint8_t lcdSelectionIndex = 0;
 LiquidCrystal lcd(17, 26, 38, 39, 40, 41, 42, 43, 44, 45); //PC7 & PB6 + Same data bus as sound chips
 bool redrawLCDOnNextLoop = false;
 bool stopLCDFileUpdate = false;
+bool displayChannelVoices = false;
+bool sameVoice = true;
 
 //Clocks
 uint32_t masterClockFrequency = 8000000;
@@ -514,8 +519,10 @@ void HandleRotaryButton()
       encoderButtonLongPressed = false;
     else
     {
-      lcdSelectionIndex++;
-      lcdSelectionIndex %= 3;
+      if(displayChannelVoices)
+        lcdSelectionIndex = 3 + (lcdSelectionIndex-2) % 6;
+      else
+        lcdSelectionIndex = (lcdSelectionIndex+1) % 3;
       redrawLCDOnNextLoop = true;
     }
   }
@@ -549,7 +556,7 @@ void LCDRedraw(uint8_t graphicCursorPos)
   if(isFileValid)
   {
     lcd.print("Voice #");
-    lcd.print(currentProgram);
+    sameVoice ? lcd.print(currentProgram) : lcd.print("!");
     lcd.print("/");
     lcd.print(maxValidVoices-1);
     lcd.print("  ");
@@ -558,7 +565,6 @@ void LCDRedraw(uint8_t graphicCursorPos)
   {
     lcd.print("NO VOICES");
   }
-  
 
   lcd.setCursor(15, 1);
   lcd.print("OCT");
@@ -566,7 +572,7 @@ void LCDRedraw(uint8_t graphicCursorPos)
   if(oct >= 0)
     lcd.print("+");
   lcd.print(oct);
-  if(lcdSelectionIndex == 2)
+  if(lcdSelectionIndex == MENU_OCTAVE)
   {
     lcd.setCursor(14, 1);
     lcd.print(" ");
@@ -586,23 +592,14 @@ void LCDRedraw(uint8_t graphicCursorPos)
   else
   {
     //Show current voices for every channel
-    //Check if channels have different voices
-    bool displayChannelVoices = false;
-    for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-    {
-      if(!(ym2612.channels[i].voiceNumber == currentProgram))
-      {
-        displayChannelVoices = true;
-        break;
-      }
-    }
 
     if(displayChannelVoices)
     {
-      lcd.setCursor(1, 2);
+      lcd.setCursor(0, 2);
       for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
       {
-        lcd.print("C"); lcd.print(i); lcd.print(" ");
+        lcdSelectionIndex == i + MENU_CH1 ? lcd.write((uint8_t)0) : lcd.print(" ");
+        lcd.print("C"); lcd.print(i);
       }
       lcd.setCursor(1, 3);
       for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
@@ -917,31 +914,46 @@ void SystemExclusive(byte *data, uint16_t length)
   }
 }
 
-uint8_t lastProgram = 0;
+// uint8_t lastProgram = 0;
+
 void ProgramChange(byte channel, byte program)
 {
   if(program == 255)
     program = maxValidVoices-1;
   program %= maxValidVoices;
-  currentProgram = program;
 
   if(channel >= YM_VST_1 && channel <= YM_VST_6)
   {
-  // Single channel voice selection
+    // Single channel voice selection
     int ch = channel-YM_VST_1;
-    ym2612.SetVoiceManual(ch, voices[currentProgram], program);
+    ym2612.SetVoiceManual(ch, voices[program], program);
     Serial.print("Voice Number for channel "); Serial.print(ch); Serial.print(": ");
-    Serial.print(currentProgram); Serial.print("/"); Serial.println(maxValidVoices-1);
+    Serial.print(program); Serial.print("/"); Serial.println(maxValidVoices-1);
+
+    //Check if channels have different voices
+    sameVoice = true;
+    for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
+    {
+      if(ym2612.channels[i].voiceNumber != program)
+      {
+        sameVoice = false;
+        break;
+      }
+    }
+    if(sameVoice)
+      currentProgram = program;
   }
   else
   {
-  // Change voice for all channels
+    // Change voice for all channels
+    currentProgram = program;
+    sameVoice = true;
     for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
         ym2612.SetVoiceManual(i, voices[currentProgram], currentProgram);
     Serial.print("Current Voice Number: "); Serial.print(currentProgram); Serial.print("/"); Serial.println(maxValidVoices-1);
     //DumpVoiceData(voices[currentProgram]); // This is super slow when the serial buffer is not read
   }
-  lastProgram = program;
+  // lastProgram = program;
   LCDRedraw(lcdSelectionIndex);
 }
 
@@ -1022,7 +1034,7 @@ void HandleRotaryEncoder()
       isEncoderUp = !isEncoderUp;
     switch(lcdSelectionIndex)
     {
-      case 0:
+      case MENU_FILE:
       {
         LoadFile(isEncoderUp ? NEXT_FILE : PREV_FILE);
         currentFavorite = 0xFF;
@@ -1031,7 +1043,7 @@ void HandleRotaryEncoder()
         UpdateLEDs();
       break;
       }
-      case 1:
+      case MENU_VOICE:
       {
         ProgramChange(YM_CHANNEL, isEncoderUp ? currentProgram+1 : currentProgram-1);
         currentFavorite = 0xFF;
@@ -1039,12 +1051,23 @@ void HandleRotaryEncoder()
         UpdateLEDs();
       break;
       }
-      case 2:
+      case MENU_OCTAVE:
       {
         isEncoderUp == true ? ym2612.ShiftOctaveUp() : ym2612.ShiftOctaveDown();
         LCDRedraw(lcdSelectionIndex); 
-      }
       break;
+      }
+      case 3:
+      case 4:
+      case 5:
+      case 6:
+      case 7:
+      case 8:
+      {
+        byte channel = lcdSelectionIndex-3;
+        byte channel_voice = ym2612.channels[channel].voiceNumber;
+        ProgramChange(channel + YM_VST_1, isEncoderUp ? channel_voice+1 : channel_voice-1);
+      }
     }
     encoderPos = enc;
   }
@@ -1380,13 +1403,25 @@ void loop()
   while (usbMIDI.read()) {};
   MIDI.read();
   HandleRotaryEncoder();
-  if((encoderButtonState == BUTTON_DOWN) && (millis() - encoderButtonTime > 1000))
+  if((encoderButtonState == BUTTON_DOWN) && (millis() - encoderButtonTime > 800))
   {
-    encoderButtonState = BUTTON_UP;
+    // Long press on encoder becomes effective
     encoderButtonLongPressed = true;
-    isEncoderInverted ^= true; //toggle
-    isEncoderInverted == true ? Serial.println("Inverted Encoder...") : Serial.println("Normalized Encoder...");
-    EEPROM.put(encoderInvertEEPROMLocation, isEncoderInverted);
+    encoderButtonState = BUTTON_UP;
+    if (lcdSelectionIndex == MENU_VOICE || lcdSelectionIndex >= 3)
+    {
+      displayChannelVoices = !displayChannelVoices;
+      if(displayChannelVoices == false)
+        lcdSelectionIndex = MENU_VOICE;
+      else
+        lcdSelectionIndex = MENU_CH1;
+    }
+    else
+    {
+      isEncoderInverted ^= true; //toggle
+      isEncoderInverted == true ? Serial.println("Inverted Encoder...") : Serial.println("Normalized Encoder...");
+      EEPROM.put(encoderInvertEEPROMLocation, isEncoderInverted);
+    }
     redrawLCDOnNextLoop = true;
   }
 
@@ -1407,20 +1442,5 @@ void loop()
     SendPatchSysex(sendPatchToVST);
     sendPatchToVST = 0xFF;
   }
-  // while(!digitalReadFast(ENC_BTN) && encoderHoldCount < 1000)
-  // {
-  //   delay(1);
-  //   encoderHoldCount++;
-  //   if(encoderHoldCount == 1000)
-  //   {
-  //     isEncoderInverted ^= true; //toggle
-  //     isEncoderInverted == true ? Serial.println("Inverted Encoder...") : Serial.println("Normalized Encoder...");
-  //     EEPROM.put(encoderInvertEEPROMLocation, isEncoderInverted);
-  //     LCDRedraw(lcdSelectionIndex);
-  //     break;
-  //   }
-  // }
-  // if(digitalReadFast(ENC_BTN))
-  //   encoderHoldCount = 0;
 }
  
