@@ -257,6 +257,93 @@ void YM2612::SetChannelOn(uint8_t key, uint8_t velocity, bool velocityEnabled)
     send(0x28, 0xF0 + offset + (setA1 << 2));  
 }
 
+void YM2612::SetIChannelOn(uint8_t slot, uint8_t key, uint8_t velocity, bool velocityEnabled)
+{
+
+  if(!channels[slot].keyOn)
+  {
+    //Turn off the channel before turning it back on again
+    uint8_t offset = slot % 3;
+    bool setA1 = slot > 2;
+    send(0x28, 0x00 + offset + (setA1 << 2));
+  }
+
+  channels[slot].keyOn = true;
+  channels[slot].keyNumber = key;
+  channels[slot].blockNumber = key/12;
+  channels[slot].sustained = YMsustainEnabled;
+  channels[slot].index = chIndex;
+  
+  chIndex++;
+  chIndex %= MAX_CHANNELS_YM;
+
+  uint8_t offset = slot % 3;
+  bool setA1 = slot > 2;
+
+  if(pitchBendYM == 0)
+  {
+    SetFrequency(NoteToFrequency(key), slot);
+  }
+  else
+  {
+    float freqFrom = NoteToFrequency(key-pitchBendYMRange);
+    float freqTo = NoteToFrequency(key+pitchBendYMRange);
+    SetFrequency(map(pitchBendYM, -8192, 8192, freqFrom, freqTo), slot);
+  }
+
+  if(velocityEnabled)
+  {
+    uint8_t s_FBALGO = GetShadowValue(0xB0, 0);
+    uint8_t algo = 0b00000111 & s_FBALGO;
+    uint8_t fb = 0b00111000 & s_FBALGO;
+    velocity = 127-velocity;
+    for(int a1 = 0; a1<=1; a1++)
+    {
+      for(int i = 0; i<3; i++)
+      {
+        switch(algo)
+        {
+          case 0:
+          case 1:
+          case 2:
+          case 3:
+          {
+            //Algos 0-3 all use OP.4 as the "slot" (AKA output or carrier)
+            send(0x4C+i, velocity, a1);
+            break;
+          }
+          case 4:
+          {
+            //OP.2 & OP.4
+            send(0x44+i, velocity, a1);
+            send(0x4C+i, velocity, a1);
+            break;
+          }
+          case 5:
+          case 6:
+          {
+            //Algos 5-6 use OP.2 & OP.3 & OP.4
+            send(0x44+i, velocity, a1);
+            send(0x48+i, velocity, a1);
+            send(0x4C+i, velocity, a1);
+            break;
+          }
+          case 7:
+          {
+            //This algo uses every operator as a slot
+            send(0x40+i, velocity, a1);
+            send(0x44+i, velocity, a1);
+            send(0x48+i, velocity, a1);
+            send(0x4C+i, velocity, a1);
+            break;
+          }
+        }
+      }
+    }
+  }
+  send(0x28, 0xF0 + offset + (setA1 << 2));
+}
+
 uint8_t YM2612::GetShadowValue(uint8_t addr, bool bank)
 {
   return bank ? bank1[addr-0x30] : bank0[addr-0x21];
@@ -283,6 +370,15 @@ void YM2612::SetChannelOff(uint8_t key)
     send(0x28, 0x00 + offset + (setA1 << 2));
 }
 
+void YM2612::SetIChannelOff(uint8_t slot, uint8_t key)
+{
+  channels[slot].keyOn = false;
+    
+  uint8_t offset = slot % 3;
+  bool setA1 = slot > 2;
+  send(0x28, 0x00 + offset + (setA1 << 2));
+}
+
 void YM2612::ReleaseSustainedKeys()
 {
   for(int i = 0; i<MAX_CHANNELS_YM; i++)
@@ -306,7 +402,7 @@ void YM2612::ClampSustainedKeys()
   }
 }
 
-void YM2612::SetVoiceManual(uint8_t slot, Voice v)
+void YM2612::SetVoiceManual(uint8_t slot, Voice v, uint8_t voiceNum)
 {
     SetLFOFreq(v.LFO[0]);
 
@@ -358,6 +454,8 @@ void YM2612::SetVoiceManual(uint8_t slot, Voice v)
     SetMult(slot, 3, v.C2[7]);
     SetDetune(slot, 3, v.C2[8]);
     SetAmplitudeModulation(slot, 3, v.C2[10]);
+
+    channels[slot].voiceNumber = voiceNum;
 }
 
 void YM2612::SetVoice(Voice v)

@@ -46,7 +46,7 @@ Default AVRDUDE command is:
 avrdude -c arduino -p usb1286 -P COM16 -b 19200 -U flash:w:"LOCATION_OF_YOUR_PROJECT_FOLDER\.pioenvs\teensy20pp\firmware.hex":a -U lfuse:w:0x5E:m -U hfuse:w:0xDF:m -U efuse:w:0xF3:m 
 */
 
-#define FW_VERSION "1.51"
+#define FW_VERSION "1.6a"
 
 
 
@@ -76,12 +76,12 @@ avrdude -c arduino -p usb1286 -P COM16 -b 19200 -U flash:w:"LOCATION_OF_YOUR_PRO
 #define PSG_NOISE_CHANNEL 5
 
 #define YM_VST_ALL 10
-#define YM_VST_1 11
-#define YM_VST_2 12
-#define YM_VST_3 13
-#define YM_VST_4 14
-#define YM_VST_5 15
-#define YM_VST_6 16
+#define YM_VST_1 11   //Mono mode
+#define YM_VST_2 12   //Mono mode
+#define YM_VST_3 13   //Mono mode
+#define YM_VST_4 14   //Mono mode
+#define YM_VST_5 15   //Mono mode
+#define YM_VST_6 16   //Mono mode
 uint8_t sendPatchToVST = 0xFF;
 
 NPRM nprm;
@@ -148,7 +148,7 @@ void BlinkLED(byte led);
 void ClearLCDLine(byte line);
 bool LoadFile(String req);
 void PutFavoriteIntoEEPROM(Voice v, uint16_t index);
-void SetVoice(Voice v);
+//void SetVoice(Voice v);
 void removeMeta();
 void ReadVoiceData();
 void HandleSerialIn();
@@ -252,7 +252,7 @@ void setup()
   EEPROM.get(encoderInvertEEPROMLocation, isEncoderInverted);
   //ym2612.SetVoice(voices[0]);
   for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-      ym2612.SetVoiceManual(i, voices[0]);
+      ym2612.SetVoiceManual(i, voices[0], 0);
   DumpVoiceData(voices[0]);
   LCDRedraw();
 }
@@ -284,9 +284,11 @@ Voice GetFavoriteFromEEPROM(uint16_t index)
     Serial.print("Got: "); Serial.println(fv.index, HEX);
     currentFavorite = 0xFF;
     LCDRedraw(lcdSelectionIndex);
-    lcd.setCursor(0, 2);
+    // lcd.setCursor(0, 2);
+    ClearLCDLine(2);
     lcd.print("No favorite set");
-    lcd.setCursor(0,3);
+    // lcd.setCursor(0, 3);
+    ClearLCDLine(3);
     lcd.print("Hold to set favorite");
     return voices[currentProgram];
   }
@@ -396,7 +398,7 @@ bool LoadFile(byte strategy) //Request a file with NEXT, PREV, FIRST commands
   ReadVoiceData();
   //ym2612.SetVoice(voices[0]);
   for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-    ym2612.SetVoiceManual(i, voices[0]);
+    ym2612.SetVoiceManual(i, voices[0], 0);
   currentProgram = 0;
   fileNameScrollIndex = 0;  // Reset fileName scroll
   LCDRedraw();
@@ -462,7 +464,7 @@ bool LoadFile(String req) //Request a file (string) to load
   ReadVoiceData();
   //ym2612.SetVoice(voices[0]);
   for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-    ym2612.SetVoiceManual(i, voices[0]);
+    ym2612.SetVoiceManual(i, voices[0], 0);
   currentProgram = 0;
   fileNameScrollIndex = 0;  // Reset fileName scroll
   LCDRedraw();
@@ -561,6 +563,38 @@ void LCDRedraw(uint8_t graphicCursorPos)
     lcd.setCursor(0, 3);
     lcd.print("Voice #"); lcd.print(fv.voiceNumber); lcd.print("   "); lcd.write(2); lcd.print(currentFavorite);
   }
+  else
+  {
+    //Show current voices for every channel
+    //Check if channels have different voices
+    bool displayChannelVoices = false;
+    for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
+    {
+      if(!(ym2612.channels[i].voiceNumber == currentProgram))
+      {
+        displayChannelVoices = true;
+        break;
+      }
+    }
+
+    if(displayChannelVoices)
+    {
+      lcd.setCursor(1, 2);
+      for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
+      {
+        lcd.print("C"); lcd.print(i); lcd.print(" ");
+      }
+      lcd.setCursor(1, 3);
+      for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
+      {
+        uint8_t voiceNum = ym2612.channels[i].voiceNumber;
+        lcd.print(voiceNum);
+        int spaces = voiceNum < 10 ? 2 : 1;
+        for(int i=0; i<spaces; i++)
+          lcd.print(" ");
+      }
+    }
+  }
 }
 
 void ResetSoundChips()
@@ -569,7 +603,7 @@ void ResetSoundChips()
   sn76489.Reset();
   //ym2612.SetVoice(voices[currentProgram]);
   for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-    ym2612.SetVoiceManual(i, voices[currentProgram]);
+    ym2612.SetVoiceManual(i, voices[currentProgram], currentProgram);
   Serial.println("Soundchips Reset");
 }
 
@@ -725,10 +759,19 @@ void KeyOn(byte channel, byte key, byte velocity)
       {
         ymVelocityEnabledFlag = false;
         for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-          ym2612.SetVoiceManual(i, voices[currentProgram]);
+          ym2612.SetVoiceManual(i, voices[currentProgram], currentProgram);
         //ym2612.SetVoice(voices[currentProgram]);
       }
       ym2612.SetChannelOn(key+SEMITONE_ADJ_YM, velocity, ymVelocityEnabledFlag);
+    }
+  }
+  else if(channel >= YM_VST_1 && channel <= YM_VST_6)
+  {
+    if(isFileValid || currentFavorite != 0xFF)
+    {
+      // TODO: check the velocity flag and reset voice if needed
+      ymVelocityEnabledFlag = true; // Velocity is always ON in mono mode
+      ym2612.SetIChannelOn(channel-YM_VST_1, key+SEMITONE_ADJ_YM, velocity, ymVelocityEnabledFlag);
     }
   }
   else if(channel == PSG_CHANNEL || channel == PSG_VELOCITY_CHANNEL)
@@ -746,6 +789,10 @@ void KeyOff(byte channel, byte key, byte velocity)
   if(channel == YM_CHANNEL || channel == YM_VELOCITY_CHANNEL)
   {
     ym2612.SetChannelOff(key+SEMITONE_ADJ_YM);
+  }
+  else if(channel >= YM_VST_1 && channel <= YM_VST_6)
+  {
+    ym2612.SetIChannelOff(channel-YM_VST_1, key+SEMITONE_ADJ_YM);
   }
   else if(channel == PSG_CHANNEL || channel == PSG_VELOCITY_CHANNEL)
   {
@@ -846,7 +893,7 @@ void SystemExclusive(byte *data, uint16_t length)
 
     //ym2612.SetVoice(voices[0]);
     for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-      ym2612.SetVoiceManual(i, voices[0]);
+      ym2612.SetVoiceManual(i, voices[0], 0);
     currentProgram = 0;
     LCDRedraw();
   }
@@ -859,12 +906,25 @@ void ProgramChange(byte channel, byte program)
     program = maxValidVoices-1;
   program %= maxValidVoices;
   currentProgram = program;
-  LCDRedraw(lcdSelectionIndex);
-  for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-      ym2612.SetVoiceManual(i, voices[currentProgram]);
-  Serial.print("Current Voice Number: "); Serial.print(currentProgram); Serial.print("/"); Serial.println(maxValidVoices-1);
-  DumpVoiceData(voices[currentProgram]);
+
+  if(channel >= YM_VST_1 && channel <= YM_VST_6)
+  {
+  // Single channel voice selection
+    int ch = channel-YM_VST_1;
+    ym2612.SetVoiceManual(ch, voices[currentProgram], program);
+    Serial.print("Voice Number for channel "); Serial.print(ch); Serial.print(": ");
+    Serial.print(currentProgram); Serial.print("/"); Serial.println(maxValidVoices-1);
+  }
+  else
+  {
+  // Change voice for all channels
+    for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
+        ym2612.SetVoiceManual(i, voices[currentProgram], currentProgram);
+    Serial.print("Current Voice Number: "); Serial.print(currentProgram); Serial.print("/"); Serial.println(maxValidVoices-1);
+    //DumpVoiceData(voices[currentProgram]); // This is super slow when the serial buffer is not read
+  }
   lastProgram = program;
+  LCDRedraw(lcdSelectionIndex);
 }
 
 void HandleSerialIn()
@@ -1087,13 +1147,13 @@ void HandleFavoriteButtons(byte portValue)
     {
       Voice v = GetFavoriteFromEEPROM(currentFavorite);
       for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-        ym2612.SetVoiceManual(i, v);
+        ym2612.SetVoiceManual(i, v, 0);
     }
     else
     {
       //ym2612.SetVoice(voices[currentProgram]);
       for(uint8_t i = 0; i<MAX_CHANNELS_YM; i++)
-        ym2612.SetVoiceManual(i, voices[currentProgram]);
+        ym2612.SetVoiceManual(i, voices[currentProgram], currentProgram);
       LCDRedraw(lcdSelectionIndex);
       currentFavorite = 0xFF;
     }
@@ -1117,11 +1177,10 @@ void BlinkLED(byte led)
 
 void ClearLCDLine(byte line)
 {
-  if(line >= LCD_ROWS-1)
+  if(line >= LCD_ROWS)
     return;
   lcd.setCursor(0, line);
   for(int i=0; i<LCD_COLS; i++)
-  {}
     lcd.write(' ');
   lcd.setCursor(0, line);
 }
@@ -1162,7 +1221,7 @@ void HandleNPRM(uint8_t channel)
   VSTMode();
   uint8_t op = ((nprm.parameter/10)%10)-1;
   op = OperatorMap[op]; 
-  for(int i = 0; i < MAX_CHANNELS_YM; i++)
+  for(uint8_t i = 0; i < MAX_CHANNELS_YM; i++)
   {
     switch(nprm.parameter)
       {

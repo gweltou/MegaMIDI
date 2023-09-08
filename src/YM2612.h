@@ -24,6 +24,7 @@ private:
         uint8_t keyNumber = 0;
         uint8_t blockNumber = 0;
         uint8_t index = 0;
+        uint8_t voiceNumber = 0;
     } Channel;
     uint8_t lfoFrq = 0;
     uint8_t lfoSens = 7;
@@ -38,7 +39,9 @@ public:
     int8_t GetOctaveShift();
     void SetOctaveShift(int8_t shift);
     void SetChannelOn(uint8_t key, uint8_t velocity, bool velocityEnabled);
+    void SetIChannelOn(uint8_t slot, uint8_t key, uint8_t velocity, bool velocityEnabled);
     void SetChannelOff(uint8_t key);
+    void SetIChannelOff(uint8_t slot, uint8_t key);
     void SetVoice(Voice v);
     float NoteToFrequency(uint8_t note);
     void SetFrequency(uint16_t frequency, uint8_t channel);
@@ -66,7 +69,7 @@ public:
     void SetMult(uint8_t slot, uint8_t op, uint8_t value);
     void SetRateScaling(uint8_t slot, uint8_t op, uint8_t value);
     void SetAmplitudeModulation(uint8_t slot, uint8_t op, bool value);
-    void SetVoiceManual(uint8_t slot, Voice v);
+    void SetVoiceManual(uint8_t slot, Voice v, uint8_t voiceNum);
     
     //Globals
     void SetLFOEnabled(bool value);
